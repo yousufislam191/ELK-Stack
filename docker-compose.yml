@@ -1,0 +1,64 @@
+version: "3.8"
+
+services:
+    elasticsearch:
+        image: docker.elastic.co/elasticsearch/elasticsearch:8.12.0
+        container_name: elasticsearch
+        environment:
+            - discovery.type=single-node # Run as single node instead of cluster
+            - ES_JAVA_OPTS=-Xms512m -Xmx512m # JVM heap size limits
+            - xpack.security.enabled=false # Disable security for development
+        ulimits:
+            memlock:
+                soft: -1
+                hard: -1 # Disable memory limits for better performance
+        ports:
+            - "9200:9200"
+        volumes:
+            - elasticsearch-data:/usr/share/elasticsearch/data
+        networks:
+            - elk
+        healthcheck:
+            test: ["CMD-SHELL", "curl -s http://localhost:9200 >/dev/null || exit 1"]
+            interval: 30s
+            timeout: 10s
+            retries: 3
+
+    logstash:
+        image: docker.elastic.co/logstash/logstash:8.12.0
+        container_name: logstash
+        ports:
+            - "5044:5044" # Beats input
+            - "5000:5000/tcp" # TCP input for direct logging
+            - "5000:5000/udp" # UDP input for direct logging
+            - "9600:9600" # Monitoring API
+        environment:
+            LS_JAVA_OPTS: "-Xmx256m -Xms256m" # JVM heap size
+        volumes:
+            - ./logstash/config/logstash.yml:/usr/share/logstash/config/logstash.yml:ro
+            - ./logstash/pipeline:/usr/share/logstash/pipeline:ro
+        networks:
+            - elk
+        depends_on:
+            - elasticsearch
+
+    kibana:
+        image: docker.elastic.co/kibana/kibana:8.12.0
+        container_name: kibana
+        ports:
+            - "5601:5601"
+        environment:
+            - ELASTICSEARCH_URL=http://elasticsearch:9200
+            - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+        networks:
+            - elk
+        depends_on:
+            - elasticsearch
+
+networks:
+    elk:
+        driver: bridge
+
+volumes:
+    elasticsearch-data:
+        driver: local
